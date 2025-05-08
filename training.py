@@ -15,7 +15,7 @@ import torch.utils.data as Data
 from models import *
 from utils import data_split, edgeindex_construct, load_dataset, muticlass_f1
 
-sys.path.append('/data3/guming/projects/IGNN/')
+sys.path.append('../../..')
 
 # Training settings
 parser = argparse.ArgumentParser()

@@ -183,3 +183,5 @@ docs/_build
 docs/rst_tmp
 
 .python-version
+
+pretrained

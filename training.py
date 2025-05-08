@@ -21,7 +21,7 @@ sys.path.append("../../..")
 parser = argparse.ArgumentParser()
 parser.add_argument("--dataset", type=str, default="cora", help="Dataset to use.")
 parser.add_argument("--source", type=str, default="pyg", help="Dataset source.")
-parser.add_argument("--seed", type=int, default=51290, help="Random seed.")
+parser.add_argument("--seed", type=int, default=42, help="Random seed.")
 parser.add_argument("--type", type=int, default=0, help="the type of the split")
 
 parser.add_argument(
@@ -172,8 +172,10 @@ test_f1score = []
 # feat=torch.FloatTensor(feat)
 
 
+from pathlib import Path
+
 from graph_datasets import load_data
-from the_utils import save_to_csv_files, set_device, set_seed
+from the_utils import make_parent_dirs, save_to_csv_files, set_device, set_seed
 
 from ignn.modules import DataConf
 from ignn.utils import read_configs
@@ -196,8 +198,15 @@ label = labels.numpy()
 feat = graph_dgl.ndata["feat"]
 num_nodes = graph_dgl.num_nodes()
 edge_index = graph_dgl.edges()
-graph = GraphConstruct(edge_index, num_nodes)
-LP, _, _ = edgeindex_construct(edge_index, num_nodes)
+
+f_path = Path(f"tmp/Uni/{args.dataset}")
+if f_path.exists():
+    graph, LP = torch.load(f_path)
+else:
+    make_parent_dirs(f_path)
+    graph = GraphConstruct(edge_index, num_nodes)
+    LP, _, _ = edgeindex_construct(edge_index, num_nodes)
+    torch.save((graph, LP),f_path)
 
 
 run = 10

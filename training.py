@@ -1,21 +1,26 @@
-from __future__ import division
-from __future__ import print_function
-from utils import load_dataset, data_split, muticlass_f1, edgeindex_construct
-import time
-import random
+from __future__ import division, print_function
+
 import argparse
+import os
+import random
+import sys
+import time
+import uuid
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as Data
 from models import *
-import uuid
-import os
+from utils import data_split, edgeindex_construct, load_dataset, muticlass_f1
+
+sys.path.append('/data3/guming/projects/IGNN/')
 
 # Training settings
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default="cora",help='Dataset to use.')
+parser.add_argument('--source', type=str, default="pyg",help='Dataset source.')
 parser.add_argument('--seed', type=int, default=51290, help='Random seed.')
 parser.add_argument('--type', type=int, default=0, help='the type of the split')
 
@@ -50,10 +55,10 @@ parser.add_argument('--val_rate', type=float, default=0.20, help='val set rate.'
 
 
 args = parser.parse_args()
-random.seed(args.seed)
-np.random.seed(args.seed)
-torch.manual_seed(args.seed)
-torch.cuda.manual_seed(args.seed)
+# random.seed(args.seed)
+# np.random.seed(args.seed)
+# torch.manual_seed(args.seed)
+# torch.cuda.manual_seed(args.seed)
 
 print("--------------------------")
 print(args)
@@ -90,7 +95,8 @@ def GraphConstruct(edge_index, n):
     for i in range(n):
         edge = []
         graph.append(edge)
-    m = edge_index.shape[1]
+    # m = edge_index.shape[1]
+    m = len(edge_index[1])
     for i in range(m):
         u,v=edge_index[0][i], edge_index[1][i]
         graph[u].append(v)
@@ -115,24 +121,52 @@ training_time=[]
 test_f1score=[]
 
 
-dataset_str = 'data/' + args.dataset +'/'+args.dataset+'.npz'
-data = np.load(dataset_str)
-edge_index, feat, label=data['edge_index'], data['feats'], data['labels'] 
-num_nodes = label.shape[0]
-graph = GraphConstruct(edge_index, num_nodes) 
+# dataset_str = 'data/' + args.dataset +'/'+args.dataset+'.npz'
+# data = np.load(dataset_str)
+# edge_index, feat, label=data['edge_index'], data['feats'], data['labels']
+# num_nodes = label.shape[0]
+# graph = GraphConstruct(edge_index, num_nodes)
 
-labels = torch.LongTensor(label) 
+# labels = torch.LongTensor(label)
 
 
-LP, _,_ = edgeindex_construct(edge_index, num_nodes)    
-feat=torch.FloatTensor(feat)
+# LP, _,_ = edgeindex_construct(edge_index, num_nodes)
+# feat=torch.FloatTensor(feat)
+
+
+from graph_datasets import load_data
+from the_utils import set_device, set_seed
+
+from ignn.modules import DataConf
+from ignn.utils import read_configs
+
+DATA = DataConf(**read_configs("data"))
+DEVICE = set_device(args.dev)
+set_seed(args.seed)
+graph, labels, class_num = load_data(
+    dataset_name=args.dataset,
+    directory=DATA.DATA_DIR,
+    source=args.source,
+    row_normalize=True,
+    rm_self_loop=False,
+    add_self_loop=True,
+    to_simple=True,
+    verbosity=3,
+)
+label = labels.numpy()
+feat=graph.ndata['feat']
+num_nodes=graph.num_nodes()
+edge_index=graph.edges()
+graph = GraphConstruct(edge_index, num_nodes)
+LP, _,_ = edgeindex_construct(edge_index, num_nodes)
+
 
 run = 10
 
-for idx in range(run):           
+for idx in range(run):
     train_idx, val_idx, test_idx = data_split(label, args.train_rate, args.val_rate, SEEDS[idx%10])
     homoratio = homocal(graph, train_idx, label)
-    print(idx, '-homoration: ', homoratio)     
+    print(idx, '-homoration: ', homoratio)
     features, dim = load_dataset(LP, feat, args.K, args.tau, homoratio, args.plain)
     checkpt_file = 'pretrained/'+uuid.uuid4().hex+'.pt'
 
@@ -143,9 +177,9 @@ for idx in range(run):
             nhidden=args.hid,
             nclass=labels.max().item() + 1,
             dropout=args.dropout,
-            bias = args.bias).to(args.dev)
+            bias = args.bias).to(DEVICE)
         optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    elif args.model =='gfk':        
+    elif args.model =='gfk':
         model = GFK(level=args.K,
             nfeat=dim,
             nlayers=args.nlayers,
@@ -154,7 +188,7 @@ for idx in range(run):
             dropoutC=args.dpC,
             dropoutM=args.dpM,
             bias = args.bias,
-            sole = args.sole).to(args.dev)
+            sole = args.sole).to(DEVICE)
         optimizer = optim.Adam([{
             'params': model.mlp.parameters(),
             'weight_decay': args.wd1,
@@ -170,15 +204,15 @@ for idx in range(run):
 
     loss_fn = nn.CrossEntropyLoss()
 
-        
-    features = features.cuda(args.dev)
-    labels = labels.cuda(args.dev)
+
+    features = features.to(DEVICE)
+    labels = labels.to(DEVICE)
 
     train_time = 0
     bad_counter = 0
     best = 0
     best_epoch = 0
-    
+
     for epoch in range(args.epochs):
         loss_tra,train_ep = train()
         f1_val = validate()
@@ -203,7 +237,7 @@ for idx in range(run):
 
     if args.model == 'gfk':
         theta=model.comb.comb_weight.clone()
-        theta=theta.detach().cpu().numpy().reshape(-1)    
+        theta=theta.detach().cpu().numpy().reshape(-1)
         print('Theta:', [float('{:.4f}'.format(i)) for i in theta])
     f1_test = test()
     print("Train cost: {:.4f}s".format(train_time))

@@ -68,7 +68,7 @@ For example, you can run the following commands to reproduce the experimental re
 
 ```
 cd MTGCNv3
-python mutil_stage_train.py --dataset='cora' --lr=0.027920509858814585 --tblr=0.04058690216962289 --tbwd=2.251707502590961e-05 --tpwd=9.461065633432985e-05 --lw=0.4523908455284135 --dr=0.7228747203954067 --layer_num=16 --new_split=False
+python mutil_stage_train.py --dataset='cora' --lr=0.027920509858814585 --tblr=0.04058690216962289 --tbwd=2.251707502590961e-05 --tpwd=9.461065633432985e-05 --lw=0.4523908455284135 --dr=0.7228747203954067 --layer_num=16 --new_split=False --device 2
 ```
 
 The optimal hyperparameters can be searched by Optuna. You just need to execute the following command.

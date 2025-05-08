@@ -6,6 +6,7 @@ parser.add_argument('--device', type=str, default='cuda:0', help='cuda or cpu')
 # 'texas','wisconsin','cornell','washington'
 # 'cora', 'citeseer', 'pubmed'
 parser.add_argument('--dataset', type=str, default='cora')
+parser.add_argument('--source', type=str, default='pyg')
 parser.add_argument('--new_split', type=bool, default=False, help="If set to True, the self-generated split will be used")
 parser.add_argument('--train_spilt', type=float, default=20, help='train split type [20,0.48, 0.6]')
 parser.add_argument('--split_id', type=int, default=1, help="selected split")
@@ -40,7 +41,7 @@ parser.add_argument('--end_epoch', type=int, default=300, help='prior modis star
 parser.add_argument('--tau', type=float, default=1, help='attn temperature ')
 parser.add_argument('--layer_num', type=int, default=16, help='track conv layer')
 parser.add_argument('--n_heads', type=int, default=2, help='sender attention')
-parser.add_argument('--a', type=float, default=-0.5, help='track resudial param')
+parser.add_argument('--a', type=float, default=0.9, help='track resudial param')
 parser.add_argument('--dr', type=float, default=0.5, help='drop out rate')
 parser.add_argument('--num_hidden', type=int, default=16)
 parser.add_argument('--num_K', type=int, default=100)

@@ -15,43 +15,64 @@ import torch.utils.data as Data
 from models import *
 from utils import data_split, edgeindex_construct, load_dataset, muticlass_f1
 
-sys.path.append('../../..')
+sys.path.append("../../..")
 
 # Training settings
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', type=str, default="cora",help='Dataset to use.')
-parser.add_argument('--source', type=str, default="pyg",help='Dataset source.')
-parser.add_argument('--seed', type=int, default=51290, help='Random seed.')
-parser.add_argument('--type', type=int, default=0, help='the type of the split')
+parser.add_argument("--dataset", type=str, default="cora", help="Dataset to use.")
+parser.add_argument("--source", type=str, default="pyg", help="Dataset source.")
+parser.add_argument("--seed", type=int, default=51290, help="Random seed.")
+parser.add_argument("--type", type=int, default=0, help="the type of the split")
 
-parser.add_argument('--epochs', type=int, default=1000, help='Number of epochs to train.')
-parser.add_argument('--patience', type=int, default=100, help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.01, help='Initial learning rate.')
-parser.add_argument('--weight_decay', type=float, default=5e-4, help='Weight decay (L2 loss on parameters).')
-parser.add_argument('--dropout', type=float, default=0.5, help='Dropout rate (1 - keep probability).')
+parser.add_argument(
+    "--epochs", type=int, default=1000, help="Number of epochs to train."
+)
+parser.add_argument(
+    "--patience", type=int, default=100, help="Number of epochs to train."
+)
+parser.add_argument("--lr", type=float, default=0.01, help="Initial learning rate.")
+parser.add_argument(
+    "--weight_decay",
+    type=float,
+    default=5e-4,
+    help="Weight decay (L2 loss on parameters).",
+)
+parser.add_argument(
+    "--dropout", type=float, default=0.5, help="Dropout rate (1 - keep probability)."
+)
 
-parser.add_argument('--model', type=str, choices=['mlp', 'gfk'], default='gfk')
-parser.add_argument('--lr1', type=float, default=0.01, help='Initial learning rate of MLP.')
-parser.add_argument('--lr2', type=float, default=0.01, help='Initial learning rate of Combination.')
-parser.add_argument('--wd1', type=float, default=5e-4, help='Weight decay of MLP.')
-parser.add_argument('--wd2', type=float, default=5e-4, help='Weight decay of Combination.')
-parser.add_argument('--sole', action="store_true", help='if one paramter for one level feature')
-parser.add_argument('--dpC', type=float, default=0.5, help='Dropout rate of Combination.')
-parser.add_argument('--dpM', type=float, default=0.5, help='Dropout rate of MLP.')
+parser.add_argument("--model", type=str, choices=["mlp", "gfk"], default="gfk")
+parser.add_argument(
+    "--lr1", type=float, default=0.01, help="Initial learning rate of MLP."
+)
+parser.add_argument(
+    "--lr2", type=float, default=0.01, help="Initial learning rate of Combination."
+)
+parser.add_argument("--wd1", type=float, default=5e-4, help="Weight decay of MLP.")
+parser.add_argument(
+    "--wd2", type=float, default=5e-4, help="Weight decay of Combination."
+)
+parser.add_argument(
+    "--sole", action="store_true", help="if one paramter for one level feature"
+)
+parser.add_argument(
+    "--dpC", type=float, default=0.5, help="Dropout rate of Combination."
+)
+parser.add_argument("--dpM", type=float, default=0.5, help="Dropout rate of MLP.")
 
-parser.add_argument('--plain', action="store_true", help='if plain basis')
+parser.add_argument("--plain", action="store_true", help="if plain basis")
 
-parser.add_argument('--dev', type=int, default=1, help='device id')
-parser.add_argument('--hid', type=int, default=64, help='Number of hidden units.')
-parser.add_argument('--nlayers', type=int, default=2, help='Number of hidden layers.')
-parser.add_argument('--bias', default='none', help='bias.')
-parser.add_argument('--batch', type=int, default=64, help='batch size')
-parser.add_argument('--K', type=int, default=10, help='the maximum level')
-parser.add_argument('--tau', type=float, default=0.5, help='homo/heterophily trade-off')
+parser.add_argument("--dev", type=int, default=1, help="device id")
+parser.add_argument("--hid", type=int, default=64, help="Number of hidden units.")
+parser.add_argument("--nlayers", type=int, default=2, help="Number of hidden layers.")
+parser.add_argument("--bias", default="none", help="bias.")
+parser.add_argument("--batch", type=int, default=64, help="batch size")
+parser.add_argument("--K", type=int, default=10, help="the maximum level")
+parser.add_argument("--tau", type=float, default=0.5, help="homo/heterophily trade-off")
 
 
-parser.add_argument('--train_rate', type=float, default=0.60, help='train set rate.')
-parser.add_argument('--val_rate', type=float, default=0.20, help='val set rate.')
+parser.add_argument("--train_rate", type=float, default=0.60, help="train set rate.")
+parser.add_argument("--val_rate", type=float, default=0.20, help="val set rate.")
 
 
 args = parser.parse_args()
@@ -63,6 +84,7 @@ args = parser.parse_args()
 print("--------------------------")
 print(args)
 
+
 def train():
     model.train()
     time_epoch = 0
@@ -73,7 +95,8 @@ def train():
     loss_train = loss_fn(output, labels[train_idx])
     loss_train.backward()
     optimizer.step()
-    return loss_train, time.time()-t1
+    return loss_train, time.time() - t1
+
 
 def validate():
     model.eval()
@@ -81,6 +104,7 @@ def validate():
         output = model(features[val_idx])
         micro_val = muticlass_f1(output, labels[val_idx])
         return micro_val.item()
+
 
 def test():
     model.load_state_dict(torch.load(checkpt_file))
@@ -90,6 +114,7 @@ def test():
         micro_test = muticlass_f1(output, labels[test_idx])
         return micro_test.item()
 
+
 def GraphConstruct(edge_index, n):
     graph = []
     for i in range(n):
@@ -98,27 +123,40 @@ def GraphConstruct(edge_index, n):
     # m = edge_index.shape[1]
     m = len(edge_index[1])
     for i in range(m):
-        u,v=edge_index[0][i], edge_index[1][i]
+        u, v = edge_index[0][i], edge_index[1][i]
         graph[u].append(v)
     return graph
 
+
 def homocal(graph, train_idx, labels):
     n = labels.shape[0]
-    train = np.array([False]*n)
-    train[train_idx]=True
+    train = np.array([False] * n)
+    train[train_idx] = True
     edge = 0.0
     cnt = 0.0
     for node in train_idx:
         for nei in graph[node]:
             if train[nei]:
                 edge += 1.0
-                if labels[node]==labels[nei]:
+                if labels[node] == labels[nei]:
                     cnt += 1.0
-    return cnt/edge
+    return cnt / edge
 
-SEEDS=[1941488137,25190,983997847,12591,4019585660,2108550661,1648766618,329014539,3212139042,2424918363]
-training_time=[]
-test_f1score=[]
+
+SEEDS = [
+    1941488137,
+    25190,
+    983997847,
+    12591,
+    4019585660,
+    2108550661,
+    1648766618,
+    329014539,
+    3212139042,
+    2424918363,
+]
+training_time = []
+test_f1score = []
 
 
 # dataset_str = 'data/' + args.dataset +'/'+args.dataset+'.npz'
@@ -135,15 +173,16 @@ test_f1score=[]
 
 
 from graph_datasets import load_data
-from the_utils import set_device, set_seed
+from the_utils import save_to_csv_files, set_device, set_seed
 
 from ignn.modules import DataConf
 from ignn.utils import read_configs
+from semi_heter.utils import get_splits_mask
 
 DATA = DataConf(**read_configs("data"))
 DEVICE = set_device(args.dev)
 set_seed(args.seed)
-graph, labels, class_num = load_data(
+graph_dgl, labels, class_num = load_data(
     dataset_name=args.dataset,
     directory=DATA.DATA_DIR,
     source=args.source,
@@ -154,56 +193,88 @@ graph, labels, class_num = load_data(
     verbosity=3,
 )
 label = labels.numpy()
-feat=graph.ndata['feat']
-num_nodes=graph.num_nodes()
-edge_index=graph.edges()
+feat = graph_dgl.ndata["feat"]
+num_nodes = graph_dgl.num_nodes()
+edge_index = graph_dgl.edges()
 graph = GraphConstruct(edge_index, num_nodes)
-LP, _,_ = edgeindex_construct(edge_index, num_nodes)
+LP, _, _ = edgeindex_construct(edge_index, num_nodes)
 
 
 run = 10
 
 for idx in range(run):
-    train_idx, val_idx, test_idx = data_split(label, args.train_rate, args.val_rate, SEEDS[idx%10])
+    # train_idx, val_idx, test_idx = data_split(label, args.train_rate, args.val_rate, SEEDS[idx%10])
+
+    if graph_dgl.name == "arxiv_ogb":
+        train_mask, val_mask, test_mask = (
+            graph_dgl.ndata["train_mask"],
+            graph_dgl.ndata["val_mask"],
+            graph_dgl.ndata["test_mask"],
+        )
+        train_idx, val_idx, test_idx = (
+            train_mask.nonzero().flatten(),
+            val_mask.nonzero().flatten(),
+            test_mask.nonzero().flatten(),
+        )
+    else:
+        train_idx, val_idx, test_idx = get_splits_mask(
+            graph=graph_dgl,
+            train_ratio=48,
+            valid_ratio=32,
+            repeat=run,
+            split_id=idx,
+            SPLIT_DIR=DATA.SPLIT_DIR,
+            mask=False,
+        )
     homoratio = homocal(graph, train_idx, label)
-    print(idx, '-homoration: ', homoratio)
+    print(idx, "-homoration: ", homoratio)
     features, dim = load_dataset(LP, feat, args.K, args.tau, homoratio, args.plain)
-    checkpt_file = 'pretrained/'+uuid.uuid4().hex+'.pt'
+    checkpt_file = "pretrained/" + uuid.uuid4().hex + ".pt"
 
     # Model and optimizer
-    if args.model =='mlp':
-        model = MLP(nfeat=features.shape[1],
+    if args.model == "mlp":
+        model = MLP(
+            nfeat=features.shape[1],
             nlayers=args.nlayers,
             nhidden=args.hid,
             nclass=labels.max().item() + 1,
             dropout=args.dropout,
-            bias = args.bias).to(DEVICE)
-        optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    elif args.model =='gfk':
-        model = GFK(level=args.K,
+            bias=args.bias,
+        ).to(DEVICE)
+        optimizer = optim.Adam(
+            model.parameters(), lr=args.lr, weight_decay=args.weight_decay
+        )
+    elif args.model == "gfk":
+        model = GFK(
+            level=args.K,
             nfeat=dim,
             nlayers=args.nlayers,
             nhidden=args.hid,
             nclass=labels.max().item() + 1,
             dropoutC=args.dpC,
             dropoutM=args.dpM,
-            bias = args.bias,
-            sole = args.sole).to(DEVICE)
-        optimizer = optim.Adam([{
-            'params': model.mlp.parameters(),
-            'weight_decay': args.wd1,
-            'lr': args.lr1
-        }, {
-            'params':model.comb.parameters(),
-            'weight_decay': args.wd2,
-            'lr': args.lr2
-        }])
-        features=features.view(-1, args.K+1, dim)
+            bias=args.bias,
+            sole=args.sole,
+        ).to(DEVICE)
+        optimizer = optim.Adam(
+            [
+                {
+                    "params": model.mlp.parameters(),
+                    "weight_decay": args.wd1,
+                    "lr": args.lr1,
+                },
+                {
+                    "params": model.comb.parameters(),
+                    "weight_decay": args.wd2,
+                    "lr": args.lr2,
+                },
+            ]
+        )
+        features = features.view(-1, args.K + 1, dim)
     else:
-        raise ValueError('wrong model para')
+        raise ValueError("wrong model para")
 
     loss_fn = nn.CrossEntropyLoss()
-
 
     features = features.to(DEVICE)
     labels = labels.to(DEVICE)
@@ -214,16 +285,18 @@ for idx in range(run):
     best_epoch = 0
 
     for epoch in range(args.epochs):
-        loss_tra,train_ep = train()
+        loss_tra, train_ep = train()
         f1_val = validate()
-        train_time+=train_ep
-        if(epoch+1)%100 == 0:
-            print('Epoch:{:04d}'.format(epoch+1),
-                'train',
-                'loss:{:.3f}'.format(loss_tra),
-                '| val',
-                'acc:{:.3f}'.format(f1_val),
-                '| cost:{:.3f}'.format(train_time))
+        train_time += train_ep
+        if (epoch + 1) % 100 == 0:
+            print(
+                "Epoch:{:04d}".format(epoch + 1),
+                "train",
+                "loss:{:.3f}".format(loss_tra),
+                "| val",
+                "acc:{:.3f}".format(f1_val),
+                "| cost:{:.3f}".format(train_time),
+            )
         if f1_val > best:
             best = f1_val
             best_epoch = epoch
@@ -235,13 +308,13 @@ for idx in range(run):
         if bad_counter == args.patience:
             break
 
-    if args.model == 'gfk':
-        theta=model.comb.comb_weight.clone()
-        theta=theta.detach().cpu().numpy().reshape(-1)
-        print('Theta:', [float('{:.4f}'.format(i)) for i in theta])
+    if args.model == "gfk":
+        theta = model.comb.comb_weight.clone()
+        theta = theta.detach().cpu().numpy().reshape(-1)
+        print("Theta:", [float("{:.4f}".format(i)) for i in theta])
     f1_test = test()
     print("Train cost: {:.4f}s".format(train_time))
-    print('Load {}th epoch'.format(best_epoch))
+    print("Load {}th epoch".format(best_epoch))
     print("Test f1:{:.3f}".format(f1_test))
     print("Current epoch: ", epoch)
     print("--------------------------")
@@ -252,5 +325,22 @@ for idx in range(run):
 
 print("avg_train_time: {:.4f} s".format(np.mean(training_time)))
 print("std_train_time: {:.4f} s".format(np.std(training_time)))
-print("avg_f1_score: {:.4f}".format(np.mean(test_f1score)))
-print("std_f1_score: {:.4f}".format(np.std(test_f1score)))
+print("optuna_avg_f1_score: {:.4f}".format(np.mean(test_f1score)))
+print("optuna_std_f1_score: {:.4f}".format(np.std(test_f1score)))
+
+
+save_to_csv_files(
+    results={
+        "acc": f"{np.mean(test_f1score)}±{np.std(test_f1score)}",
+        "time": f"{np.mean(training_time)}±{np.std(training_time)}",
+    },
+    insert_info={
+        "dataset": graph_dgl.name,
+        "model": "UniFilter",
+    },
+    append_info={
+        "args": args.__dict__,
+        "source": args.source,
+    },
+    csv_name="baselines_ex.csv",
+)

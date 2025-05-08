@@ -103,7 +103,7 @@ def validate():
     with torch.no_grad():
         output = model(features[val_idx])
         micro_val = muticlass_f1(output, labels[val_idx])
-        return micro_val.item()
+        return micro_val
 
 
 def test():
@@ -112,7 +112,7 @@ def test():
     with torch.no_grad():
         output = model(features[test_idx])
         micro_test = muticlass_f1(output, labels[test_idx])
-        return micro_test.item()
+        return micro_test
 
 
 def GraphConstruct(edge_index, n):

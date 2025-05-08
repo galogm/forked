@@ -11,7 +11,7 @@ os.makedirs("logs", exist_ok=True)
 def objective(trial):
     dataset = "squirrel"  # 可以替换为变量
     source = "critical"
-    gpu = "6"
+    gpu = "0"
     trial_id = trial.number  # Optuna 会自动给每个 trial 分配唯一 ID
 
     # 采样参数
@@ -90,7 +90,7 @@ def objective(trial):
 
 # 启动搜索
 study = optuna.create_study()
-study.optimize(objective, n_trials=50, n_jobs=4)
+study.optimize(objective, n_trials=50, n_jobs=8)
 
 print("Best trial:")
 print(" Value (accuracy):", -study.best_value)

@@ -10,17 +10,15 @@ os.makedirs("logs", exist_ok=True)
 
 # 参数搜索空间（显式写成变量，便于去重）
 search_space = {
-    "hid": [128, 256, 512],
-    "nlayers": [3, 4],
-    "lr1": [0.1, 0.15, 0.01, 0.05],
-    "lr2": [0.5, 0.005],
-    "wd1": [0, 5e-4, 5e-5],
-    "wd2": [0, 5e-4, 1e-4],
-    "dpC": [0, 0.3, 0.6, 0.9],
-    "dpM": [0, 0.4, 0.6, 0.8],
-    "tau": [1, 0.3, 0.6, 0.9],
+    "d_model": [128, 256, 512],
+    "nlayers": [1, 2, 4],
+    "q_dim": [32, 64],
+    "n_q": [4, 8],
+    "n_pnode": [128, 256],
+    "lr": [0.001, 0.01],
+    "lr_step": [0.99999, 1],
+    "lr_lb": [0.001],
     "dropout": [0.2, 0.4, 0.6, 0.8],
-    "bias": ["none", "bn"],
 }
 
 # 保存已使用参数组合
@@ -28,25 +26,22 @@ used_combinations = set()
 
 
 def objective(trial):
-    dataset = "actor"  # 可以替换为变量
-    source = "pyg"
-    gpu = "2"
+    dataset = "squirrel"  # 可以替换为变量
+    source = "critical"
+    gpu = "6"
     trial_id = trial.number  # Optuna 会自动给每个 trial 分配唯一 ID
-
 
     # 采样参数
     params = {
-        "hid": trial.suggest_categorical("hid", search_space["hid"]),
+        "d_model": trial.suggest_categorical("d_model", search_space["d_model"]),
         "nlayers": trial.suggest_categorical("nlayers", search_space["nlayers"]),
-        "lr1": trial.suggest_categorical("lr1", search_space["lr1"]),
-        "lr2": trial.suggest_categorical("lr2", search_space["lr2"]),
-        "wd1": trial.suggest_categorical("wd1", search_space["wd1"]),
-        "wd2": trial.suggest_categorical("wd2", search_space["wd2"]),
-        "dpC": trial.suggest_categorical("dpC", search_space["dpC"]),
-        "dpM": trial.suggest_categorical("dpM", search_space["dpM"]),
-        "tau": trial.suggest_categorical("tau", search_space["tau"]),
+        "q_dim": trial.suggest_categorical("q_dim", search_space["q_dim"]),
+        "n_q": trial.suggest_categorical("n_q", search_space["n_q"]),
+        "n_pnode": trial.suggest_categorical("n_pnode", search_space["n_pnode"]),
+        "lr": trial.suggest_categorical("lr", search_space["lr"]),
+        "lr_step": trial.suggest_categorical("lr_step", search_space["lr_step"]),
+        "lr_lb": trial.suggest_categorical("lr_lb", search_space["lr_lb"]),
         "dropout": trial.suggest_categorical("dropout", search_space["dropout"]),
-        "bias": trial.suggest_categorical("bias", search_space["bias"]),
     }
 
     # 去重逻辑（组合转为不可变的 tuple）
@@ -58,14 +53,35 @@ def objective(trial):
     # 构建命令
     cmd = [
         "python3",
-        "training.py",
+        "train.py",
         "--dataset",
         dataset,
         "--source",
         source,
-       "--trial_number",
-       f"{trial_id}",
-
+        "--trial_number",
+        f"{trial_id}",
+        "--d_model",
+        str(params["d_model"]),
+        "--nlayers",
+        str(params["nlayers"]),
+        "--q_dim",
+        str(params["q_dim"]),
+        "--n_q",
+        str(params["n_q"]),
+        "--n_pnode",
+        str(params["n_pnode"]),
+        "--patience",
+        str(100),
+        "--lr",
+        str(params["lr"]),
+        "--lr_step",
+        str(params["lr_step"]),
+        "--lr_lb",
+        str(params["lr_lb"]),
+        "--dropout",
+        str(params["dropout"]),
+        "--cuda_num",
+        str(gpu),
     ]
 
     # 执行命令并捕获输出
@@ -76,7 +92,7 @@ def objective(trial):
     # 保存日志到 logs/{dataset}_{trial_id}.log
     log_path = Path(f"logs/{dataset}/")
     log_path.mkdir(parents=True, exist_ok=True)
-    with open(log_path.joinpath(f'{trial_id}.log'), "w", encoding='utf-8') as f:
+    with open(log_path.joinpath(f"{trial_id}.log"), "w", encoding="utf-8") as f:
         f.write("CMD:\n" + " ".join(cmd) + "\n\n")
         f.write("STDOUT:\n" + result.stdout + "\n\n")
         f.write("STDERR:\n" + result.stderr)
@@ -93,7 +109,7 @@ def objective(trial):
 
 # 启动搜索
 study = optuna.create_study()
-study.optimize(objective, n_trials=64, n_jobs=2)
+study.optimize(objective, n_trials=64, n_jobs=8)
 # squirrel ch 256 15
 # blog flickr 128 6
 

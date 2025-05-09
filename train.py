@@ -148,11 +148,16 @@ def model_train(model, optimizer, scheduler):
         running_loss += loss_train.data.item()
         acc += acc_train.item()
         div += 1
-        tqdm_t.set_description('lr %.4e, %d/%d %.4e' %
-                               (scheduler.get_last_lr()[0],
-                               it, len(train_data),
-                               running_loss / div) +\
-                               val_des + sum_des)
+        # tqdm_t.set_description('lr %.4e, %d/%d %.4e' %
+        #                        (scheduler.get_last_lr()[0],
+        #                        it, len(train_data),
+        #                        running_loss / div) +\
+        #                        val_des + sum_des)
+        # print('lr %.4e, %d/%d %.4e' %
+        #                        (scheduler.get_last_lr()[0],
+        #                        it, len(train_data),
+        #                        running_loss / div) +\
+        #                        val_des + sum_des)
         # writer.add_scalar('data/train_loss', running_loss / div, epoch * len(train_data) + it)
         # writer.add_scalar('data/train_acc', acc / div, epoch * len(train_data) + it)
     if args.dataset in ["ogbg-molpcba"]:
@@ -214,10 +219,14 @@ def model_val(model):
             acc += acc_val.item()
             running_loss += loss_val.data.item()
             div += 1
-            tqdm_t.set_description('lr %.4e' % (scheduler.get_last_lr()[0]) + \
-                                    train_des + ', val %d/%d %f' %
-                                    (it, len(val_data), running_loss / div)+ \
-                                    sum_des)
+            # tqdm_t.set_description('lr %.4e' % (scheduler.get_last_lr()[0]) + \
+            #                         train_des + ', val %d/%d %f' %
+            #                         (it, len(val_data), running_loss / div)+ \
+            #                         sum_des)
+            # print('lr %.4e' % (scheduler.get_last_lr()[0]) + \
+            #                         train_des + ', val %d/%d %f' %
+            #                         (it, len(val_data), running_loss / div)+ \
+            #                         sum_des)
             # writer.add_scalar('data/val_loss', running_loss / div, epoch * len(val_data) + it)
             # writer.add_scalar('data/val_acc', acc / div, epoch * len(val_data) + it)
     if len(val_data) > 1:

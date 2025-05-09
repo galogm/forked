@@ -1,37 +1,47 @@
-from __future__ import division
-from __future__ import print_function
-
-from training_setting import args
-from utils.utils import N2DataLoader, get_n_params
-from utils.loss import bcelogits_loss, weighted_cross_entropy, float_bcelogits_loss
-from model.modules import N2Node, N2Graph
+from __future__ import division, print_function
 
 import os
 import random
-import numpy as np
-from tqdm import tqdm
+import sys
+import time
 
+sys.path.append('../../..')
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
+from model.modules import N2Graph, N2Node
 from torch.utils.tensorboard import SummaryWriter
 from torch_geometric.data import Batch
+from tqdm import tqdm
+from training_setting import args
+from utils.loss import bcelogits_loss, float_bcelogits_loss, weighted_cross_entropy
+from utils.utils import N2DataLoader, get_n_params
+
 print(f"running on GPU{args.cuda_num}")
 print(f"layer: {args.nlayers}; n_pnode: {args.n_pnode}")
 print(f"q_dim: {args.q_dim}; n_copies: {args.n_q}; hidden: {args.d_model}")
-args.cuda = not args.no_cuda and torch.cuda.is_available()
 
-random.seed(args.seed)
-np.random.seed(args.seed)
-torch.manual_seed(args.seed)
-if args.cuda:
-    torch.cuda.manual_seed(args.seed)
+from the_utils import make_parent_dirs, save_to_csv_files, set_device, set_seed
+
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+DEVICE = set_device(args.cuda_num)
+# os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_num
+set_seed(args.seed)
+# args.cuda = not args.no_cuda and torch.cuda.is_available()
+
+# random.seed(args.seed)
+# np.random.seed(args.seed)
+# torch.manual_seed(args.seed)
+# if torch.cuda.is_available():
+#     torch.cuda.manual_seed(args.seed)
 
 dataset_list = ["ogbn-arxiv", "ogbn-proteins"
                 "AmazonComputers", "AmazonPhoto", "CoauthorCS", "CoauthorPhysics",
                 'amazon-ratings', 'minesweeper', 'tolokers', 'questions',
-                "arxiv-year", "genius"]
+                "arxiv-year", "genius","actor","squirrel","chameleon","blogcatalog",'flickr',"amazon-ratings","roman-empire","photo","pubmed","wikics"]
 def lambda_lr(s):
     s += 1
     if s < args.warmup * args.nbatch:
@@ -52,7 +62,7 @@ def model_init(dataset):
                 d_in=nfeats,
                 d_ein=nedgefeats,
                 d_model=args.d_model,
-                nclass=nclass, 
+                nclass=nclass,
                 q_dim=args.q_dim,
                 n_q=args.n_q,
                 n_c=args.n_q if dataset == "ogbg-molpcba" else 1,
@@ -63,15 +73,15 @@ def model_init(dataset):
                 pre_encoder=pre_encoder,
                 pos_encoder=pos_encoder)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    
+
     if task_type in ["multi-class", "binary-class"]:
         loss_func = float_bcelogits_loss
     else:
         loss_func = nn.NLLLoss()
-    if args.cuda:
-        model.cuda()
-    if torch.cuda.device_count() > 1:
-        model = nn.DataParallel(model)
+    if torch.cuda.is_available():
+        model.cuda(DEVICE)
+    # if torch.cuda.device_count() > 1:
+    #     model = nn.DataParallel(model)
     return model, optimizer, loss_func
 
 
@@ -102,12 +112,12 @@ def model_train(model, optimizer, scheduler):
             if labels.ndim == 0:
                     labels = labels.view(1)
             data = Batch.from_data_list(data)
-            if args.cuda:
-                labels = labels.cuda()
-                data = data.cuda()
+            if torch.cuda.is_available():
+                labels = labels.cuda(DEVICE)
+                data = data.cuda(DEVICE)
         else:
-            if args.cuda:
-                data = data.cuda()
+            if torch.cuda.is_available():
+                data = data.cuda(DEVICE)
             labels = data.y.squeeze(-1)
         output = model(data)
         if args.dataset in dataset_list:
@@ -143,8 +153,8 @@ def model_train(model, optimizer, scheduler):
                                it, len(train_data),
                                running_loss / div) +\
                                val_des + sum_des)
-        writer.add_scalar('data/train_loss', running_loss / div, epoch * len(train_data) + it)
-        writer.add_scalar('data/train_acc', acc / div, epoch * len(train_data) + it)
+        # writer.add_scalar('data/train_loss', running_loss / div, epoch * len(train_data) + it)
+        # writer.add_scalar('data/train_acc', acc / div, epoch * len(train_data) + it)
     if args.dataset in ["ogbg-molpcba"]:
         acc = 0
     elif args.dataset in ['yelp-chi', 'twitch-e', 'ogbn-proteins', 'genius', 'minesweeper', 'tolokers', 'questions']:
@@ -169,12 +179,12 @@ def model_val(model):
                 if labels.ndim == 0:
                     labels = labels.view(1)
                 data = Batch.from_data_list(data)
-                if args.cuda:
-                    labels = labels.cuda()
-                    data = data.cuda()
+                if torch.cuda.is_available():
+                    labels = labels.cuda(DEVICE)
+                    data = data.cuda(DEVICE)
             else:
-                if args.cuda:
-                    data = data.cuda()
+                if torch.cuda.is_available():
+                    data = data.cuda(DEVICE)
                 labels = data.y.squeeze(-1)
             output = model(data)
             if args.dataset in dataset_list:
@@ -199,20 +209,21 @@ def model_val(model):
             else:
                 loss_val = loss_func(output, labels)
                 acc_val = metric(output, labels)
-            if args.cuda:
+            if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             acc += acc_val.item()
             running_loss += loss_val.data.item()
             div += 1
             tqdm_t.set_description('lr %.4e' % (scheduler.get_last_lr()[0]) + \
-                                    train_des + ', val %d/%d %f' % 
+                                    train_des + ', val %d/%d %f' %
                                     (it, len(val_data), running_loss / div)+ \
                                     sum_des)
-            writer.add_scalar('data/val_loss', running_loss / div, epoch * len(val_data) + it)
-            writer.add_scalar('data/val_acc', acc / div, epoch * len(val_data) + it)
+            # writer.add_scalar('data/val_loss', running_loss / div, epoch * len(val_data) + it)
+            # writer.add_scalar('data/val_acc', acc / div, epoch * len(val_data) + it)
     if len(val_data) > 1:
-        writer.add_scalar('data/epoch_val_loss', running_loss / div, epoch)
-        writer.add_scalar('data/epoch_val_acc', acc / div, epoch)
+        # writer.add_scalar('data/epoch_val_loss', running_loss / div, epoch)
+        # writer.add_scalar('data/epoch_val_acc', acc / div, epoch)
+        pass
     if args.dataset in ["ogbg-molpcba"]:
         acc = 0
     elif args.dataset in ['yelp-chi', 'twitch-e', 'ogbn-proteins', 'genius', 'minesweeper', 'tolokers', 'questions']:
@@ -234,12 +245,12 @@ def model_test(model):
                 if labels.ndim == 0:
                     labels = labels.view(1)
                 data = Batch.from_data_list(data)
-                if args.cuda:
-                    labels = labels.cuda()
-                    data = data.cuda()
+                if torch.cuda.is_available():
+                    labels = labels.cuda(DEVICE)
+                    data = data.cuda(DEVICE)
             else:
-                if args.cuda:
-                    data = data.cuda()
+                if torch.cuda.is_available():
+                    data = data.cuda(DEVICE)
                 labels = data.y.squeeze(-1)
             output = model(data)
             if args.dataset in dataset_list:
@@ -264,7 +275,7 @@ def model_test(model):
             else:
                 loss_test = loss_func(output, labels)
                 acc_test = metric(output, labels)
-            if args.cuda:
+            if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             acc += acc_test.item()
             running_loss += loss_test.data.item()
@@ -291,75 +302,90 @@ def model_test(model):
     return round(running_loss / div, 5), acc
 
 
+
+
+
 if __name__ == '__main__':
     # Load data
     data_loader = N2DataLoader()
-    print("Loading " + args.dataset.title() + "...")
+    # print("Loading " + args.dataset.title() + "...")
     flag = (args.dataset in ["NCI1", "IMDB-BINARY", "IMDB-MULTI", "PROTEINS", "COLLAB"])
     graph_iter_range = 10 if flag else 1
     for k in range(graph_iter_range):
         args.fold_idx = k if graph_iter_range > 1 else args.fold_idx
-        data_loader.load_data(dataset=args.dataset, spilit_type="public", 
-                            nbatch=args.nbatch, fold_idx=args.fold_idx)
-        nclass, nfeats, nedgefeats = data_loader.nclass, data_loader.nfeats, data_loader.nedgefeats
-        train_data, val_data, test_data = data_loader.train_data, data_loader.val_data, data_loader.test_data
-        metric = data_loader.metric
-        task_type = data_loader.task_type
 
-        save_path = 'export/' + args.testmode + args.dataset + '/'
-        model_config =  '%.1f_%d_%d_%d_%d_%d/' % (args.dropout, args.d_model, args.n_pnode, args.nlayers, args.q_dim, args.n_q)
-        if args.dataset in ["NCI1", "IMDB-BINARY", "IMDB-MULTI", "PROTEINS", "COLLAB"]:
-            model_config = model_config + '%d/' % (args.fold_idx)
-            print("Running on split " + str(args.fold_idx))
-        save_path = save_path + model_config
-        is_exists = os.path.exists(save_path)
-        if not is_exists:
-            save_path = save_path + "1/"
-            os.makedirs(save_path)
-        else:
-            files = os.listdir(save_path)
+        runs = 10
+        accs=[]
+        ts = []
+        for idx in range(runs):
+            t_s = time.time()
+
+            args.id = f"{args.dataset}_{args.trial_number}_{idx}"
+
+            data_loader.load_data(dataset=args.dataset, spilit_type="public",
+                            nbatch=args.nbatch,source=args.source, fold_idx=args.fold_idx)
+            nclass, nfeats, nedgefeats = data_loader.nclass, data_loader.nfeats, data_loader.nedgefeats
+            train_data, val_data, test_data = data_loader.train_data, data_loader.val_data, data_loader.test_data
+            metric = data_loader.metric
+            task_type = data_loader.task_type
+
+            save_path = 'export/' + args.testmode + args.dataset + '/'
+            model_config =  '%.1f_%d_%d_%d_%d_%d/' % (args.dropout, args.d_model, args.n_pnode, args.nlayers, args.q_dim, args.n_q)
+
+            if args.dataset in ["NCI1", "IMDB-BINARY", "IMDB-MULTI", "PROTEINS", "COLLAB"]:
+                model_config = model_config + '%d/' % (args.fold_idx)
+                print("Running on split " + str(args.fold_idx))
+            model_config = model_config + args.id + str(idx)
+            print("Running on split " + str(idx))
+            save_path = save_path + model_config
+            is_exists = os.path.exists(save_path)
+            if not is_exists:
+                save_path = save_path + "1/"
+                os.makedirs(save_path, exist_ok=True)
+            else:
+                files = os.listdir(save_path)
+                if args.resume_last or args.resume_best:
+                    file_idx = str(len(files))
+                    save_path = save_path + file_idx + "/"
+                else:
+                    file_idx = str(len(files) + 1)
+                    save_path = save_path + file_idx + "/"
+                    os.makedirs(save_path)
+            model, optimizer, loss_func = model_init(args.dataset)
+            print('number of parameters:', get_n_params(model))
+            name = "N2"
+            logfile = "node as neuron"
+            scheduler = lr_scheduler.LambdaLR(optimizer, lambda_lr)
+            continue_flag = True
+            bad_counter = 0
+            start_epoch = 0
+            best = args.epochs + 1
+            # writer = SummaryWriter(log_dir=os.path.join(save_path, name))
             if args.resume_last or args.resume_best:
-                file_idx = str(len(files))
-                save_path = save_path + file_idx + "/"
-            else:
-                file_idx = str(len(files) + 1)
-                save_path = save_path + file_idx + "/"
-                os.makedirs(save_path)
-        model, optimizer, loss_func = model_init(args.dataset)
-        print('number of parameters:', get_n_params(model))
-        name = "N2"
-        logfile = "node as neuron"
-        scheduler = lr_scheduler.LambdaLR(optimizer, lambda_lr)
-        continue_flag = True
-        bad_counter = 0
-        start_epoch = 0
-        best = args.epochs + 1
-        writer = SummaryWriter(log_dir=os.path.join(save_path, name))
-        if args.resume_last or args.resume_best:
-            if args.resume_last:
-                fname = save_path + logfile + '_last.pth'
-            else:
-                fname = save_path + logfile + '_best.pth'
+                if args.resume_last:
+                    fname = save_path + logfile + '_last.pth'
+                else:
+                    fname = save_path + logfile + '_best.pth'
 
-            if os.path.exists(fname):
-                data = torch.load(fname)
-                torch.set_rng_state(data['torch_rng_state'])
-                torch.cuda.set_rng_state(data['cuda_rng_state'])
-                np.random.set_state(data['numpy_rng_state'])
-                random.setstate(data['random_rng_state'])
-                model.load_state_dict(data['state_dict'], strict=False)
-                optimizer.load_state_dict(data['cocn_optimizer'])
-                scheduler.load_state_dict(data['cocn_scheduler'])
-                start_epoch = data['epoch'] + 1
-                bad_counter = data['patience']
-                best = data['best_val_loss']
-                print('Resuming from epoch %d, best validation loss %f' % (
-                    data['epoch'], data['best_val_loss']))
-        val_des = ', val NaN'
-        sum_des = ', bad 0, best NaN'
-        l_bad_cnt = -1
-        print("Start training...")
-        with tqdm(unit='it', total=args.epochs) as tqdm_t:
+                if os.path.exists(fname):
+                    data = torch.load(fname)
+                    torch.set_rng_state(data['torch_rng_state'])
+                    torch.cuda.set_rng_state(data['cuda_rng_state'])
+                    np.random.set_state(data['numpy_rng_state'])
+                    random.setstate(data['random_rng_state'])
+                    model.load_state_dict(data['state_dict'], strict=False)
+                    optimizer.load_state_dict(data['cocn_optimizer'])
+                    scheduler.load_state_dict(data['cocn_scheduler'])
+                    start_epoch = data['epoch'] + 1
+                    bad_counter = data['patience']
+                    best = data['best_val_loss']
+                    print('Resuming from epoch %d, best validation loss %f' % (
+                        data['epoch'], data['best_val_loss']))
+            val_des = ', val NaN'
+            sum_des = ', bad 0, best NaN'
+            l_bad_cnt = -1
+            print("Start training...")
+            # with tqdm(unit='it', total=args.epochs) as tqdm_t:
             for epoch in range(start_epoch, start_epoch + args.epochs):
                 if not continue_flag:
                     break
@@ -400,30 +426,57 @@ if __name__ == '__main__':
                         bad_counter += 1
                     val_des = ', val %d/%d %f' % (len(val_data), len(val_data), loss_val_value)
                     sum_des = ', bad %i, best %.4f' % (bad_counter, best)
-                    tqdm_t.set_description('lr %.4e' % (scheduler.get_last_lr()[0]) + \
+                    # tqdm_t.set_description(f'Epoch:{epoch} '+'lr %.4e' % (scheduler.get_last_lr()[0]) + \
+                    #                         train_des + val_des + sum_des)
+                    print(f'Epoch:{epoch} '+'lr %.4e' % (scheduler.get_last_lr()[0]) + \
                                             train_des + val_des + sum_des)
                     continue_flag = (bad_counter <= args.patience) or (l_bad_cnt == -1)
-                tqdm_t.update(1)
-        if not args.fastmode:
-            data = torch.load(save_path + logfile + "_best.pth")
-            model.load_state_dict(data['state_dict'])
-            print("Testing model..." + str(l_bad_cnt))
-            test_loss, test_acc = model_test(model)
-            
+                    # tqdm_t.update(1)
+            if not args.fastmode:
+                data = torch.load(save_path + logfile + "_best.pth")
+                model.load_state_dict(data['state_dict'])
+                print("Testing model..." + str(l_bad_cnt))
+                test_loss, test_acc = model_test(model)
 
-        print('Exporting data......')
-        write_text = "-------training arg-------" + '\n'
-        for k, v in vars(args).items():
-            if k == "nbatch":
-                write_text += "-------dataset arg-------\n"
-            elif k == "nlayers":
-                write_text += "-------model arg-------\n"
-            write_text += f'{k} = {v}\n'
-        write_text = write_text + "-------results-------\n"
-        write_text = write_text + 'loss = ' + str(test_loss) + '\n' + 'acc = ' + str(test_acc) + '\n'
-        write_text = write_text + 'best val loss = ' + str(best) + '\n'
-        fname = '/' + args.dataset + '_result.txt'
-        with open(save_path + fname, "w") as f:
-            f.write(write_text)
-        f.close()
-    print("Done!")
+
+            # print('Exporting data......')
+            # write_text = "-------training arg-------" + '\n'
+            # for k, v in vars(args).items():
+            #     if k == "nbatch":
+            #         write_text += "-------dataset arg-------\n"
+            #     elif k == "nlayers":
+            #         write_text += "-------model arg-------\n"
+            #     write_text += f'{k} = {v}\n'
+            # write_text = write_text + "-------results-------\n"
+            # write_text = write_text + 'loss = ' + str(test_loss) + '\n' + 'acc = ' + str(test_acc) + '\n'
+            # write_text = write_text + 'best val loss = ' + str(best) + '\n'
+            # fname = '/' + args.dataset + f'{args.id}_{idx}_result.txt'
+            # with open(save_path + fname, "w") as f:
+            #     f.write(write_text)
+
+            accs.append(test_acc)
+            ts.append(time.time()-t_s)
+
+        training_time=np.array(ts)
+        test_f1score=np.array(accs)
+        print("avg_train_time: {:.4f} s".format(np.mean(training_time)))
+        print("std_train_time: {:.4f} s".format(np.std(training_time)))
+        print("optuna_avg_f1_score: {:.4f}".format(np.mean(test_f1score)))
+        print("optuna_std_f1_score: {:.4f}".format(np.std(test_f1score)))
+
+
+        save_to_csv_files(
+            results={
+                "acc": f"{np.mean(test_f1score)}±{np.std(test_f1score)}",
+                "time": f"{np.mean(training_time)}±{np.std(training_time)}",
+            },
+            insert_info={
+                "dataset": data_loader.name,
+                "model": "N2",
+            },
+            append_info={
+                "args": args.__dict__,
+                "source": args.source,
+            },
+            csv_name="baselines_ex.csv",
+        )

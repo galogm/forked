@@ -1,5 +1,6 @@
 import csv
 import os
+from os import path
 
 import gdown
 import numpy as np
@@ -7,63 +8,169 @@ import pandas as pd
 import torch
 import torch_geometric.datasets as GeoData
 import torch_geometric.transforms as T
-from torch_geometric.data.data import Data
-from torch_geometric.loader import (ClusterData, ClusterLoader, DataListLoader, DataLoader, 
-                                    GraphSAINTNodeSampler, RandomNodeSampler)
-from torch_geometric.utils import homophily, index_to_mask, degree
 from ogb.graphproppred import PygGraphPropPredDataset
 from ogb.nodeproppred import PygNodePropPredDataset
 from sklearn.model_selection import StratifiedKFold
-
-from utils.transform import (IrrgularFeatIdx2OneHotPre)
+from torch_geometric.data.data import Data
+from torch_geometric.loader import (
+    ClusterData,
+    ClusterLoader,
+    DataListLoader,
+    DataLoader,
+    GraphSAINTNodeSampler,
+    RandomNodeSampler,
+)
+from torch_geometric.utils import degree, homophily, index_to_mask
 from utils.dataset import YandexDataset
+from utils.evaluators import accuracy, eval_average_precision, eval_rocauc
 from utils.ncd_dataset import load_nc_dataset
-from utils.evaluators import (accuracy, eval_rocauc, eval_average_precision)
-from os import path
+from utils.transform import IrrgularFeatIdx2OneHotPre
 
 root = path.dirname(path.abspath(__file__))[:-6] + '/data/'
 splits_drive_url = {
-    'snap-patents' : '12xbBRqd8mtG_XkNLH8dRRNZJvVM4Pw-N', 
-    'pokec' : '1ZhpAiyTNc0cE_hhgyiqxnkKREHK7MK-_', 
+    'snap-patents' : '12xbBRqd8mtG_XkNLH8dRRNZJvVM4Pw-N',
+    'pokec' : '1ZhpAiyTNc0cE_hhgyiqxnkKREHK7MK-_',
 }
 
-dataset_list = ["COLLAB", "IMDB-BINARY", "IMDB-MULTI", "PROTEINS", "NCI1", 
-                "arxiv-year", "genius",  
+dataset_list = ["COLLAB", "IMDB-BINARY", "IMDB-MULTI", "PROTEINS", "NCI1",
+                "arxiv-year", "genius",
                 'amazon-ratings', 'minesweeper', 'tolokers', 'questions',
                 "AmazonComputers", "AmazonPhoto", "CoauthorCS", "CoauthorPhysics",
                 "ogbn-arxiv", "ogbn-proteins", "ogbg-molpcba"]
 
+from the_utils import split_train_test_nodes
+
+
+def get_splits_mask(
+    num_nodes,
+    name,
+    train_ratio,
+    valid_ratio,
+    repeat,
+    split_id,
+    SPLIT_DIR,
+    mask=True,
+):
+    train_idx, val_idx, test_idx = split_train_test_nodes(
+        num_nodes=num_nodes,
+        train_ratio=train_ratio,
+        valid_ratio=valid_ratio,
+        data_name=name,
+        split_id=split_id,
+        split_times=repeat,
+        fixed_split=True,
+        split_save_dir=SPLIT_DIR,
+    )
+    if not mask:
+        return train_idx, val_idx, test_idx
+    train_mask = (
+        torch.zeros(num_nodes)
+        .scatter_(0, torch.tensor(train_idx, dtype=torch.int64), 1)
+        .bool()
+    )
+    val_mask = (
+        torch.zeros(num_nodes)
+        .scatter_(0, torch.tensor(val_idx, dtype=torch.int64), 1)
+        .bool()
+    )
+    test_mask = (
+        torch.zeros(num_nodes)
+        .scatter_(0, torch.tensor(test_idx, dtype=torch.int64), 1)
+        .bool()
+    )
+
+    return train_mask, val_mask, test_mask
 class N2DataLoader:
     def __init__(self, sampler='random'):
         self.sampler = sampler
         self.saint_batch_size = 1000
 
-    def load_data(self, dataset='CORA', spilit_type="public", nbatch=1, fold_idx=0):
-        if dataset in ["COLLAB", "IMDB-BINARY", "IMDB-MULTI"]:
-            self.load_tu(dataset, nbatch, fold_idx, True)
-        elif dataset in ["PROTEINS", "ENZYMES", "NCI1"]:
-            self.load_tu(dataset, nbatch, fold_idx, False)
-        elif "ogbg" in dataset:
-            self.load_ogbg(dataset, nbatch)
-        elif "ogbn" in dataset:
-            self.load_ogbn(dataset, nbatch)
-        elif dataset in ["AmazonComputers", "AmazonPhoto"]:
-            self.load_Amazon(dataset[6:], nbatch)
-        elif dataset in ["CoauthorCS", "CoauthorPhysics"]:
-            self.load_Coauthor(dataset[8:], nbatch)
-        elif dataset in ["arxiv-year", "genius"]:
-            self.load_nc(dataset, nbatch, fold_idx)
-        elif dataset in ['amazon-ratings', 'minesweeper', 'tolokers', 'questions']:
-            self.load_yandex(dataset, nbatch, fold_idx)
+    def load_data(self, dataset='CORA', spilit_type="public", source='pyg',nbatch=1, fold_idx=0, runs=10, idx=0):
+        from graph_datasets import load_data
+
+        from ignn.modules import DataConf
+        from ignn.utils import read_configs
+
+        DATA = DataConf(**read_configs("data"))
+
+        data = load_data(
+            dataset_name=dataset,
+            directory=DATA.DATA_DIR,
+            source=source,
+            row_normalize=True,
+            rm_self_loop=False,
+            add_self_loop=True,
+            to_simple=True,
+            verbosity=3,
+            return_type='pyg',
+        )
+
+        if data.name == "arxiv_ogb":
+            train_mask, val_mask, test_mask = (
+                data["train_mask"],
+                data["val_mask"],
+                data["test_mask"],
+            )
         else:
-            sup_dataset = "\nSupported datasets include: "
-            for i in dataset_list:
-                sup_dataset += i
-                sup_dataset += ", "
-            sup_dataset = sup_dataset[:-2]
-            raise ValueError("Unsupported type: " + dataset + sup_dataset)
-    
-    
+            train_mask, val_mask, test_mask = get_splits_mask(
+                data.num_nodes,
+                data.name,
+                train_ratio=48,
+                valid_ratio=32,
+                repeat=runs,
+                split_id=idx,
+                SPLIT_DIR='../../../data/random_splits/fixed_splits',
+                mask=True,
+            )
+
+        data.train_mask=train_mask
+        data.val_mask=val_mask
+        data.test_mask=test_mask
+
+        pre_transform = T.Compose([])
+        data = pre_transform(data)
+        if nbatch > 1:
+            self.train_data = DataListLoader(dataset=[data], batch_size=nbatch, shuffle=True)
+            self.val_data = DataListLoader(dataset=[data], batch_size=nbatch, shuffle=True)
+            self.test_data = DataListLoader(dataset=[data], batch_size=1)
+        else:
+            self.train_data = DataLoader(dataset=[data], batch_size=nbatch, shuffle=True)
+            self.val_data = DataLoader(dataset=[data], batch_size=nbatch)
+            self.test_data = DataLoader(dataset=[data], batch_size=nbatch)
+        self.nclass = data.num_classes
+        self.name = data.name
+        self.nnodes = data.num_nodes
+        self.nfeats = data.x.shape[1]
+        self.nedgefeats = 0
+        self.task_type = "single-class"
+        self.metric = accuracy
+        for key, val in data:
+            setattr(self, key, val)
+        # if dataset in ["COLLAB", "IMDB-BINARY", "IMDB-MULTI"]:
+        #     self.load_tu(dataset, nbatch, fold_idx, True)
+        # elif dataset in ["PROTEINS", "ENZYMES", "NCI1"]:
+        #     self.load_tu(dataset, nbatch, fold_idx, False)
+        # elif "ogbg" in dataset:
+        #     self.load_ogbg(dataset, nbatch)
+        # elif "ogbn" in dataset:
+        #     self.load_ogbn(dataset, nbatch)
+        # elif dataset in ["AmazonComputers", "AmazonPhoto"]:
+        #     self.load_Amazon(dataset[6:], nbatch)
+        # elif dataset in ["CoauthorCS", "CoauthorPhysics"]:
+        #     self.load_Coauthor(dataset[8:], nbatch)
+        # elif dataset in ["arxiv-year", "genius"]:
+        #     self.load_nc(dataset, nbatch, fold_idx)
+        # elif dataset in ['amazon-ratings', 'minesweeper', 'tolokers', 'questions']:
+        #     self.load_yandex(dataset, nbatch, fold_idx)
+        # else:
+        #     sup_dataset = "\nSupported datasets include: "
+        #     for i in dataset_list:
+        #         sup_dataset += i
+        #         sup_dataset += ", "
+        #     sup_dataset = sup_dataset[:-2]
+        #     raise ValueError("Unsupported type: " + dataset + sup_dataset)
+
+
     def generate_splits(self, data, g_split):
         n_nodes = len(data.x)
         train_mask = torch.zeros(n_nodes, dtype=bool)
@@ -98,8 +205,8 @@ class N2DataLoader:
         self.nfeats = dataset.num_node_features
         self.nedgefeats = dataset.num_edge_features
         self.task_type = "single-class"
-        self.metric = accuracy 
-    
+        self.metric = accuracy
+
 
     def load_Coauthor(self, dataset, batch_size):
         data_path = root + "coauthor/"
@@ -119,7 +226,7 @@ class N2DataLoader:
         self.nfeats = dataset.num_node_features
         self.nedgefeats = dataset.num_edge_features
         self.task_type = "single-class"
-        self.metric = accuracy 
+        self.metric = accuracy
 
 
     def load_yandex(self, dataset_type, batch_size, fold_idx):
@@ -169,8 +276,8 @@ class N2DataLoader:
         if not os.path.exists(root + f'nc/splits/{name}-splits.npy'):
             assert dataset in splits_drive_url.keys()
             gdown.download(id=splits_drive_url[dataset], \
-                           output=root + f'nc/splits/{name}-splits.npy', quiet=False) 
-        
+                           output=root + f'nc/splits/{name}-splits.npy', quiet=False)
+
         splits_lst = np.load(root + f'nc/splits/{name}-splits.npy', allow_pickle=True)
         for i in range(len(splits_lst)):
             for key in splits_lst[i]:
@@ -181,7 +288,7 @@ class N2DataLoader:
     def load_nc(self, dataset_type, batch_size, fold_idx):
         data, sub_dataname = load_nc_dataset(dataset_type)
         data = Data(data.graph["node_feat"], data.graph["edge_index"], data.graph["edge_feat"], data.label)
-        
+
         split_idx_lst = self.load_fixed_splits(dataset_type, sub_dataname)
         data.train_mask = index_to_mask(split_idx_lst[fold_idx]['train'], data.num_nodes)
         data.val_mask = index_to_mask(split_idx_lst[fold_idx]['valid'], data.num_nodes)
@@ -247,9 +354,9 @@ class N2DataLoader:
     def load_ogbg(self, dataset_type, batch_size):
         data_path = root + 'ogb/'
         dataset = PygGraphPropPredDataset(name=dataset_type, root=data_path)
-        
-        split_idx = dataset.get_idx_split() 
-        
+
+        split_idx = dataset.get_idx_split()
+
         if batch_size > 1:
             self.train_data = DataListLoader(dataset=dataset[split_idx["train"]], batch_size=batch_size, shuffle=True)
             self.val_data = DataListLoader(dataset=dataset[split_idx["valid"]], batch_size=batch_size)
@@ -286,7 +393,7 @@ class N2DataLoader:
         else:
             pre_transform = T.Compose([]) #, T.RootedRWSubgraph(32) T.RootedEgoNets(3) T.AddLaplacianEigenvectorPE(6)
         dataset = PygNodePropPredDataset(name=dataset_type, root=data_path, pre_transform=pre_transform)
-        
+
         split_idx = dataset.get_idx_split()
         split_names = ['train_mask', 'val_mask', 'test_mask']
         for i, key in enumerate(split_idx.keys()):
@@ -359,7 +466,7 @@ class N2DataLoader:
         flag = os.path.exists(data_path + dataset_type + "/train_idx.csv") and os.path.exists(data_path + dataset_type + "/val_idx.csv")
         if not flag:
             self.csv_writer(dataset.data.y.numpy(), data_path + dataset_type)
-        
+
         train_idx = self.csv_reader(data_path + dataset_type + "/train_idx.csv", fold_idx)
         val_idx = self.csv_reader(data_path + dataset_type + "/val_idx.csv", fold_idx)
         train_dataset = dataset.index_select(train_idx)

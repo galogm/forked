@@ -1,12 +1,16 @@
-import numpy as np
-from sklearn.metrics import roc_auc_score, confusion_matrix, f1_score, average_precision_score
-import torch
-import torch.nn.functional as F
-from torchmetrics.functional import average_precision
-from torch_geometric.utils import to_dense_adj
-
 import logging
 import warnings
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+from sklearn.metrics import (
+    average_precision_score,
+    confusion_matrix,
+    f1_score,
+    roc_auc_score,
+)
+from torch_geometric.utils import to_dense_adj
 
 
 def eval_average_precision(output, labels):
@@ -98,7 +102,7 @@ def eval_rocauc(y_pred, y_true):
         if np.sum(y_true[:, i] == 1) > 0 and np.sum(y_true[:, i] == 0) > 0:
             is_labeled = y_true[:, i] == y_true[:, i]
             score = roc_auc_score(y_true[is_labeled, i], y_pred[is_labeled, i])
-                                
+
             rocauc_list.append(score)
 
     if len(rocauc_list) == 0:
@@ -109,6 +113,8 @@ def eval_rocauc(y_pred, y_true):
 
 
 import matplotlib.pyplot as plt
+
+
 def accuracy_degree(output, labels, data, mask):
     preds = output.max(1)[1].type_as(labels)
     correct = preds.eq(labels).double()
